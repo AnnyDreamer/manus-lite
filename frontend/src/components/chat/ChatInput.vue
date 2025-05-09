@@ -2,16 +2,26 @@
 import { ref } from 'vue'
 import { NInput, NButton } from 'naive-ui'
 
-const inputMessage = ref('')
+defineProps<{
+  disabled?: boolean
+  isWaiting?: boolean  // 新增：等待状态
+}>()
 
 const emit = defineEmits<{
   (e: 'send', message: string): void
+  (e: 'stop'): void  // 新增：停止事件
 }>()
+
+const inputMessage = ref('')
 
 const sendMessage = () => {
   if (!inputMessage.value.trim()) return
   emit('send', inputMessage.value)
   inputMessage.value = ''
+}
+
+const handleStop = () => {  // 新增：停止处理函数
+  emit('stop')
 }
 
 const handleKeyDown = (e: KeyboardEvent) => {
@@ -31,7 +41,14 @@ const handleKeyDown = (e: KeyboardEvent) => {
       placeholder="输入消息..."
       @keydown="handleKeyDown"
       class="flex-1"
+      :disabled="isWaiting"  
     />
-    <n-button type="primary" @click="sendMessage">发送</n-button>
+    <n-button 
+      :type="isWaiting ? 'error' : 'primary'" 
+      @click="isWaiting ? handleStop() : sendMessage()"  
+      :disabled="disabled"
+    >
+      {{ isWaiting ? '停止' : '发送' }}  
+    </n-button>
   </div>
 </template>

@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { NConfigProvider, NLayout } from 'naive-ui'
 import { useWindowSize } from '@vueuse/core'
-import ChatPanel from './components/chat/ChatPanel.vue'
+import { NConfigProvider, NLayout } from 'naive-ui'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import BrowserPanel from './components/browser/BrowserPanel.vue'
+import ChatPanel from './components/chat/ChatPanel.vue'
 import { WebSocketService } from './services/websocket'
 import type { TaskResult } from './types'
 
@@ -28,14 +28,25 @@ const handleMessage = (event: MessageEvent) => {
     case 'message':
       chatPanelRef.value?.addSystemMessage(data.content || '')
       break
+    // case 'task_results':
+    //   const results = data.content as TaskResult[]
+    //   results.forEach((result) => {
+    //     chatPanelRef.value?.addSystemMessage(
+    //       `Task ${result.taskId}: ${result.status === 'success' ? '✅' : '❌'} ${
+    //         result.output || result.error
+    //       }`,
+    //     )
+    //   })
+    //   break
     case 'task_results':
       const results = data.content as TaskResult[]
-      results.forEach((result) => {
-        chatPanelRef.value?.addSystemMessage(
-          `Task ${result.taskId}: ${result.status === 'success' ? '✅' : '❌'} ${
-            result.output || result.error
-          }`,
-        )
+      results.forEach(result => {
+        chatPanelRef.value?.addTaskMessage({
+          content: result.output || result.error || '',
+          status: result.status,
+          taskId: result.taskId,
+          filePath: result.filePath
+        })
       })
       break
     case 'browser_screenshot':
@@ -56,14 +67,19 @@ const handleMessage = (event: MessageEvent) => {
 const handleSend = (message: string) => {
   wsService.send({
     type: 'message',
-    content: message,
+    content: message
+  })
+}
+const handleStop = () => {
+  wsService.send({
+    type: 'stop'
   })
 }
 
 const handleNavigate = (url: string) => {
   wsService.send({
     type: 'navigate',
-    content: url,
+    content: url
   })
 }
 
@@ -85,6 +101,7 @@ onUnmounted(() => {
           v-model:is-collapsed="isCollapsed"
           :sidebar-width="hasInteraction ? sidebarWidth : '100%'"
           @send="handleSend"
+          @stop="handleStop"
         />
         <browser-panel v-if="hasInteraction" ref="browserPanelRef" @navigate="handleNavigate" />
       </n-layout>
