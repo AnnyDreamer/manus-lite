@@ -1,0 +1,31 @@
+{
+  "name": "manus-lite-frontend",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@vicons/antd": "^0.13.0",
+    "naive-ui": "^2.37.3",
+    "pinia": "^3.0.2",
+    "vue": "^3.4.15",
+    "vue-router": "^4.5.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.16",
+    "@vitejs/plugin-vue": "^5.0.3",
+    "@vue/tsconfig": "^0.7.0",
+    "@vueuse/core": "^10.7.2",
+    "autoprefixer": "^10.4.17",
+    "postcss": "^8.4.35",
+    "tailwindcss": "^3.4.1",
+    "typescript": "^5.3.3",
+    "vite": "^5.0.12",
+    "vite-plugin-vue-devtools": "^7.7.6",
+    "vue-tsc": "^1.8.27"
+  }
+}
