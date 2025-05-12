@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import type { Message } from '../../types'
+import type { Message } from '@/types'
 
 interface Message {
   type: 'user' | 'system' | 'task'

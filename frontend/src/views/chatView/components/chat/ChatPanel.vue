@@ -1,8 +1,8 @@
 <script setup lang="ts">
+import { ConversationService } from '@/services/conversationService'
+import type { Message } from '@/types'
 import { NLayoutSider } from 'naive-ui'
 import { onUnmounted, ref } from 'vue'
-import { ConversationService } from '../../services/conversationService'
-import type { Message } from '../../types'
 import ChatHeader from './ChatHeader.vue'
 import ChatInput from './ChatInput.vue'
 import ChatMessages from './ChatMessages.vue'
