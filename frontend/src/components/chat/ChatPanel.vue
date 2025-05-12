@@ -1,17 +1,11 @@
 <script setup lang="ts">
-import { ref } from 'vue'
 import { NLayoutSider } from 'naive-ui'
+import { onUnmounted, ref } from 'vue'
+import { ConversationService } from '../../services/conversationService'
+import type { Message } from '../../types'
 import ChatHeader from './ChatHeader.vue'
-import ChatMessages from './ChatMessages.vue'
 import ChatInput from './ChatInput.vue'
-
-interface Message {
-  type: 'user' | 'system' | 'task'
-  content: string
-  status?: 'success' | 'error' | 'running'
-  taskId?: string
-  filePath?: string
-}
+import ChatMessages from './ChatMessages.vue'
 
 const props = defineProps<{
   isCollapsed: boolean
@@ -21,34 +15,64 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'update:isCollapsed', value: boolean): void
   (e: 'send', message: string): void
-  (e: 'stop'): void 
+  (e: 'stop'): void
 }>()
 
 const messages = ref<Message[]>([])
 const isWaiting = ref(false)
 
-const handleSend = (message: string) => {
+// 保存对话
+const saveConversation = async () => {
+  try {
+    const conversationId = ConversationService.getCurrentConversationId()
+    if (conversationId) {
+      await ConversationService.updateConversation(conversationId, messages.value)
+    } else {
+      await ConversationService.saveConversation(messages.value)
+    }
+  } catch (error) {
+    console.error('保存对话失败:', error)
+  }
+}
+
+const handleSend = async (message: string) => {
   messages.value.push({
     type: 'user',
-    content: message,
+    content: message
   })
-  isWaiting.value = true 
+  isWaiting.value = true
   emit('send', message)
+
+  // 检查是否需要保存对话
+  if (ConversationService.shouldSave()) {
+    await saveConversation()
+  }
 }
-const handleStop = () => {  
+
+const handleStop = () => {
   isWaiting.value = false
   emit('stop')
 }
 
-const addSystemMessage = (content: string) => {
+const addSystemMessage = async (content: string) => {
   messages.value.push({
     type: 'system',
-    content,
+    content
   })
-  isWaiting.value = false 
+  isWaiting.value = false
+
+  // 检查是否需要保存对话
+  if (ConversationService.shouldSave()) {
+    await saveConversation()
+  }
 }
-// 添加新的方法
-const addTaskMessage = (task: { content: string; status: string; taskId: string; filePath?: string }) => {
+
+const addTaskMessage = async (task: {
+  content: string
+  status: 'success' | 'error' | 'running'
+  taskId: string
+  filePath?: string
+}) => {
   messages.value.push({
     type: 'task',
     content: task.content,
@@ -57,7 +81,19 @@ const addTaskMessage = (task: { content: string; status: string; taskId: string;
     filePath: task.filePath
   })
   isWaiting.value = false
+
+  // 检查是否需要保存对话
+  if (ConversationService.shouldSave()) {
+    await saveConversation()
+  }
 }
+
+// 组件卸载时保存对话
+onUnmounted(async () => {
+  if (messages.value.length > 0) {
+    await saveConversation()
+  }
+})
 
 defineExpose({
   addSystemMessage,
@@ -83,8 +119,17 @@ defineExpose({
         :is-collapsed="isCollapsed"
         @update:is-collapsed="emit('update:isCollapsed', $event)"
       />
-      <chat-messages :messages="messages" :is-waiting="isWaiting"/>
-      <chat-input @send="handleSend"  @stop="handleStop" :is-waiting="isWaiting"/>
+      <div class="chat-messages empty" v-if="!messages.length">输入任务以执行……</div>
+      <chat-messages :messages="messages" :is-waiting="isWaiting" v-else />
+      <chat-input @send="handleSend" @stop="handleStop" :is-waiting="isWaiting" />
     </div>
   </n-layout-sider>
 </template>
+<style scoped>
+.empty {
+  color: rgb(170, 173, 177);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+</style>
