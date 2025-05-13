@@ -5,8 +5,10 @@
         ref="chatPanelRef"
         v-model:is-collapsed="isCollapsed"
         :sidebar-width="hasInteraction ? sidebarWidth + 'px' : '100%'"
+        :messages="messageList.plan.length ? [messageList] : []"
         @send="handleSend"
         @stop="handleStop"
+        @show-detail="handleShowDetail"
       />
       <!-- 分割条 -->
       <template v-if="hasInteraction">
@@ -27,7 +29,7 @@
 import { WebSocketService } from '@/services/websocket'
 import type { TaskResult } from '@/types'
 import { NConfigProvider } from 'naive-ui'
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import BrowserPanel from './components/browser/BrowserPanel.vue'
 import ChatPanel from './components/chat/ChatPanel.vue'
 
@@ -62,32 +64,93 @@ onUnmounted(() => {
   window.removeEventListener('mouseup', stopDrag)
 })
 
+const messageList = ref<{
+  task: string
+  type: string
+  plan: Array<{
+    id: string
+    title: string
+    type: string
+    command: string
+    description: string
+    status: string
+    liveContent: {
+      filepath: string
+      content: string
+    }
+  }>
+}>({
+  task: '',
+  type: '',
+  plan: []
+})
+
+const planList = ref<
+  Array<{
+    id: string
+    title: string
+    type: string
+    command: string
+    description: string
+    status: string
+    liveContent: {
+      filepath: string
+      content: string
+    }
+  }>
+>([])
+
+const showMessage = computed(() => {
+  return messageList.value.plan.map(item => ({
+    ...item,
+    status: item.status
+  }))
+})
+
 const wsService = new WebSocketService('ws://localhost:3000')
+
+const stepLogs = ref(new Map<string, { command: string; output: string }>())
 
 const handleMessage = (event: MessageEvent) => {
   const data = JSON.parse(event.data)
+  console.log(data)
   switch (data.type) {
     case 'message':
-      chatPanelRef.value?.addSystemMessage(data.content || '')
+      chatPanelRef.value?.addSystemMessage(data || '')
       break
     case 'task_plan': {
-      // 展示即将执行的任务
-      const planMsg = data.content
-        .map(
-          (t: any, idx: number) =>
-            `【任务${idx + 1}】类型: ${t.type}，操作: ${t.action}，内容: ${t.content}`
-        )
-        .join('\n')
-      chatPanelRef.value?.addSystemMessage('即将执行以下任务：\n' + planMsg)
+      messageList.value = data
+      planList.value = data.plan
+      chatPanelRef.value?.addSystemMessage(data)
+      break
+    }
+    case 'task_start': {
+      const task = data.content
+      // 记录命令
+      stepLogs.value.set(task.taskId, { command: task.command, output: '' })
+      updateBrowserPanelLogs()
+      if (task.status === 'running') {
+        browserPanelRef.value?.updateCurrentTask({
+          title: task.title,
+          description: task.description,
+          status: task.status
+        })
+      }
       break
     }
     case 'task_results': {
       const results = data.content as TaskResult[]
       results.forEach(result => {
-        // 追加日志
-        if (result.output && result.status === 'running') {
-          browserPanelRef.value?.addLog(result.output)
+        if (stepLogs.value.has(result.taskId)) {
+          const prev = stepLogs.value.get(result.taskId)!
+          stepLogs.value.set(result.taskId, {
+            ...prev,
+            output: (prev.output || '') + (result.output || result.error || '')
+          })
         }
+      })
+      updateBrowserPanelLogs()
+      results.forEach(result => {
         // 追加图片
         if (result.image) {
           browserPanelRef.value?.addImage(result.image)
@@ -119,6 +182,15 @@ const handleMessage = (event: MessageEvent) => {
   }
 }
 
+function updateBrowserPanelLogs() {
+  if (browserPanelRef.value) {
+    browserPanelRef.value.clearLogs && browserPanelRef.value.clearLogs()
+    for (const [taskId, { command, output }] of stepLogs.value.entries()) {
+      browserPanelRef.value.addLog(`命令: ${command}\n结果:\n${output}\n----------------------\n`)
+    }
+  }
+}
+
 const handleSend = (message: string) => {
   wsService.send({
     type: 'message',
@@ -137,6 +209,13 @@ const handleNavigate = (url: string) => {
     content: url
   })
 }
+
+function handleShowDetail({ input, output }) {
+  if (browserPanelRef.value) {
+    browserPanelRef.value.addLog('输入命令：' + input + '\n输出内容：' + output)
+  }
+}
+
 onMounted(() => {
   wsService.connect(handleMessage)
 })
