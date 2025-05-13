@@ -16,13 +16,16 @@
           style="width: 2px; cursor: col-resize; background: #eee; user-select: none"
           @mousedown="startDrag"
         ></div>
-        <browser-panel
-          ref="browserPanelRef"
-          style="flex: 1; height: 100vh"
-          @navigate="handleNavigate"
-        />
+        <browser-panel ref="browserPanelRef" style="flex: 1; height: 100vh" />
       </template>
     </div>
+    <!-- 传递 taskLogs 给 ChatMessages -->
+    <chat-messages
+      v-if="false"
+      :messages="messageList.plan.length ? [messageList] : []"
+      :is-waiting="false"
+      :task-logs="taskLogs"
+    />
   </n-config-provider>
 </template>
 <script setup lang="ts" name="mainView">
@@ -110,6 +113,10 @@ const showMessage = computed(() => {
 const wsService = new WebSocketService('ws://localhost:3000')
 
 const stepLogs = ref(new Map<string, { command: string; output: string }>())
+const taskLogs = ref(new Map<string, string[]>())
+
+const statusMap = ref()
+const historyStatusMap = ref()
 
 const handleMessage = (event: MessageEvent) => {
   const data = JSON.parse(event.data)
@@ -128,6 +135,8 @@ const handleMessage = (event: MessageEvent) => {
       const task = data.content
       // 记录命令
       stepLogs.value.set(task.taskId, { command: task.command, output: '' })
+      // 初始化日志
+      if (!taskLogs.value.has(task.taskId)) taskLogs.value.set(task.taskId, [])
       updateBrowserPanelLogs()
       if (task.status === 'running') {
         browserPanelRef.value?.updateCurrentTask({
@@ -136,6 +145,45 @@ const handleMessage = (event: MessageEvent) => {
           status: task.status
         })
       }
+      break
+    }
+    case 'task_retry': {
+      const { taskId, retryCount, maxRetries } = data.content
+      // 更新 planList 和 messageList
+      const task = planList.value.find(t => t.id === taskId)
+      if (task) {
+        task.status = 'retry'
+        if (!task.liveContent) task.liveContent = { filepath: '', content: '' }
+        task.liveContent.content += `\n[重试 ${retryCount}/${maxRetries}] 正在重试...\n`
+      }
+      messageList.value = { ...messageList.value, plan: [...planList.value] }
+      // 追加日志
+      if (!taskLogs.value.has(taskId)) taskLogs.value.set(taskId, [])
+      taskLogs.value.get(taskId)!.push(`🔄 第${retryCount}/${maxRetries}次重试...`)
+      chatPanelRef.value?.addTaskMessage({
+        content: `🔄 任务重试中 (${retryCount}/${maxRetries})...`,
+        status: 'retry',
+        taskId
+      })
+      break
+    }
+    case 'task_failed': {
+      const { taskId, message: failMsg } = data.content
+      const task = planList.value.find(t => t.id === taskId)
+      if (task) {
+        task.status = 'failed'
+        if (!task.liveContent) task.liveContent = { filepath: '', content: '' }
+        task.liveContent.content += `\n[失败] ${failMsg}\n`
+      }
+      messageList.value = { ...messageList.value, plan: [...planList.value] }
+      // 追加日志
+      if (!taskLogs.value.has(taskId)) taskLogs.value.set(taskId, [])
+      taskLogs.value.get(taskId)!.push(`❌ 失败：${failMsg}`)
+      chatPanelRef.value?.addTaskMessage({
+        content: `❌ ${failMsg}`,
+        status: 'failed',
+        taskId
+      })
       break
     }
     case 'task_results': {
@@ -148,24 +196,28 @@ const handleMessage = (event: MessageEvent) => {
             output: (prev.output || '') + (result.output || result.error || '')
           })
         }
+        // 更新消息列表中的任务状态
+        const taskIndex = planList.value.findIndex(task => task.id === result.taskId)
+        if (taskIndex !== -1) {
+          planList.value[taskIndex].status = result.status
+          // 更新消息列表
+          messageList.value = {
+            ...messageList.value,
+            plan: [...planList.value]
+          }
+        }
+        // 追加日志
+        if (!taskLogs.value.has(result.taskId)) taskLogs.value.set(result.taskId, [])
+        if (result.output) taskLogs.value.get(result.taskId)!.push(result.output)
+        // 添加任务消息
+        chatPanelRef.value?.addTaskMessage({
+          content: result.output || result.error || '',
+          status: result.status,
+          taskId: result.taskId,
+          filePath: result.filePath
+        })
       })
       updateBrowserPanelLogs()
-      results.forEach(result => {
-        // 追加图片
-        if (result.image) {
-          browserPanelRef.value?.addImage(result.image)
-        }
-        // 任务最终状态
-        if (result.status === 'success' || result.status === 'failed') {
-          chatPanelRef.value?.addTaskMessage({
-            content:
-              (result.status === 'success' ? '✅' : '❌') + (result.output || result.error || ''),
-            status: result.status === 'failed' ? 'error' : result.status,
-            taskId: result.taskId,
-            filePath: result.filePath
-          })
-        }
-      })
       break
     }
     case 'browser_screenshot':
@@ -203,13 +255,6 @@ const handleStop = () => {
     type: 'stop'
   })
 }
-const handleNavigate = (url: string) => {
-  wsService.send({
-    type: 'navigate',
-    content: url
-  })
-}
-
 function handleShowDetail({ input, output }) {
   if (browserPanelRef.value) {
     browserPanelRef.value.addLog('输入命令：' + input + '\n输出内容：' + output)
